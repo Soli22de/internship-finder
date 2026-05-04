@@ -1,0 +1,4 @@
+[submodule "ResuMiner"]
+	path = ResuMiner
+	url = https://github.com/Soli22de/ResuMiner.git
+	branch = main
