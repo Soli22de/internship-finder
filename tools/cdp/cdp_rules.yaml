@@ -1,0 +1,67 @@
+# Configuration for the Generalized CDP Scraper
+# Define how to paginate for different target domains.
+# 
+# Domain rules:
+#   domain: a substring to match in the URL
+#   pagination_selector: CSS selector for the "Next Page" button. 
+#                        It must match only when the button is active/clickable.
+#   scroll_first: whether to scroll down the page before looking for the next button
+#   scroll_amount: how much to scroll
+#   max_retries: how many times to retry finding the next button before giving up
+
+rules:
+  xiaohongshu:
+    domain: "xiaohongshu.com"
+    pagination_selector: "li.ant-pagination-next[aria-disabled='false']"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  bilibili:
+    domain: "bilibili.com"
+    pagination_selector: "li.is-next:not(.is-disabled)"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  tencent:
+    domain: "join.qq.com"
+    pagination_selector: "li.btn-next:not(.btn-disabled)"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  kuaishou:
+    domain: "kuaishou.cn"
+    pagination_selector: "li.btn-next:not(.disabled)"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  bytedance:
+    domain: "jobs.bytedance.com"
+    pagination_selector: "li.atsx-pagination-next[aria-disabled='false']"
+    scroll_first: false
+    scroll_amount: 2000
+    max_retries: 10
+
+  meituan:
+    domain: "zhaopin.meituan.com"
+    pagination_selector: "li.btn-next[aria-disabled='false']"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  jd:
+    domain: "campus.jd.com"
+    pagination_selector: "button.btn-next:not([disabled])"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10
+
+  alibaba:
+    domain: "talent.alibaba.com"
+    pagination_selector: "button.btn-next:not([disabled])"
+    scroll_first: true
+    scroll_amount: 2000
+    max_retries: 10

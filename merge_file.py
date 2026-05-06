@@ -45,8 +45,8 @@ dashboard_skill_keywords = [
 ]
 priority_skill_keywords = ["python", "sql", "spark", "hadoop", "hive", "tableau", "power bi", "机器学习", "统计", "数据分析"]
 TARGET_CITY = "上海"
-TARGET_COMPANIES = ["快手", "腾讯", "字节跳动", "小红书", "美团", "阿里", "京东", "哔哩哔哩"]
-OFFICIAL_PRIORITY_COMPANY_KEYWORDS = ["字节", "腾讯", "快手", "小红书", "美团", "阿里", "京东", "哔哩哔哩"]
+TARGET_COMPANIES = ["快手", "腾讯", "字节跳动", "小红书", "美团", "阿里", "京东", "哔哩哔哩", "百度"]
+OFFICIAL_PRIORITY_COMPANY_KEYWORDS = ["字节", "腾讯", "快手", "小红书", "美团", "阿里", "京东", "哔哩哔哩", "百度"]
 SHANGHAI_VARIANTS = ["上海", "上海市", "浦东", "徐汇", "静安", "杨浦", "闵行", "虹口", "长宁", "普陀", "松江", "嘉定", "青浦", "奉贤", "金山", "崇明", "总部base上海", "base上海", "上海/北京", "上海/深圳", "上海/杭州"]
 
 # 性能优化：全局预编译正则，避免热路径重复编译
@@ -840,6 +840,7 @@ def generate_company_dashboard(df_all, company_name):
         "阿里": "alibaba",
         "京东": "jd",
         "哔哩哔哩": "bilibili",
+        "百度": "baidu",
     }
     slug = company_slug_map.get(company_name, normalize_text(company_name).lower())
     today = datetime.now().strftime("%Y-%m-%d")

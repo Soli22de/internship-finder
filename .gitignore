@@ -43,8 +43,14 @@ ResuMiner/**/__pycache__/
 ResuMiner/__pycache__/
 ResuMiner/bin/
 
+# secrets
+.env
+
 # top-level noise
 node_modules/
 cdp_data/
 cdp_intercepted_payloads.json
 .trae/
+
+# Browser Profile (CDP)
+chrome_dev_profile/

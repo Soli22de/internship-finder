@@ -247,10 +247,19 @@ def extract_rows_from_payload(payload: Any, source: str, company: str, location_
     return rows
 
 
-def crawl_one_source(playwright, conf: Dict[str, Any]) -> List[Dict[str, str]]:
-    browser = playwright.chromium.connect_over_cdp("http://localhost:9222")
-    context = browser.contexts[0]
-    page = context.new_page()
+def crawl_one_source(playwright, conf: Dict[str, Any], use_cdp: bool = False) -> List[Dict[str, str]]:
+    if use_cdp:
+        browser = playwright.chromium.connect_over_cdp("http://localhost:9222")
+        context = browser.contexts[0]
+        page = context.new_page()
+    else:
+        browser = playwright.chromium.launch(headless=HEADLESS)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="zh-CN",
+        )
+        page = context.new_page()
     payloads: List[Any] = []
     api_tasks: List[Dict[str, Any]] = []
     location_map: Dict[str, str] = {}
@@ -361,9 +370,15 @@ def crawl_one_source(playwright, conf: Dict[str, Any]) -> List[Dict[str, str]]:
 
     try:
         page.close()
-    except:
+    except Exception:
         pass
-    # Do not close context/browser in CDP mode to keep manual session alive
+    if not use_cdp:
+        try:
+            context.close()
+            browser.close()
+        except Exception:
+            pass
+    # In CDP mode do NOT close context/browser to keep manual session alive
     return out
 
 
@@ -451,101 +466,31 @@ def fetch_jd_jobs() -> List[Dict[str, str]]:
     return dedup
 
 
-def fetch_tencent_jobs() -> List[Dict[str, str]]:
-    payloads = []
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0]
-            
-            def on_response(resp):
-                if "join.qq.com/api/v1/position/searchPosition" in resp.url:
-                    try:
-                        data = resp.json()
-                        payloads.append(data)
-                    except Exception:
-                        pass
-            
-            context.on("response", on_response)
-            
-            tc_page = None
-            for page in context.pages:
-                if "join.qq.com" in page.url:
-                    tc_page = page
-                    break
-            
-            if tc_page:
-                tc_page.bring_to_front()
-                for _ in range(100):
-                    try:
-                        next_btn = tc_page.locator("li.btn-next:not(.btn-disabled)")
-                        if next_btn.is_visible():
-                            next_btn.click()
-                            tc_page.wait_for_timeout(2000)
-                        else:
-                            tc_page.mouse.wheel(0, 1000)
-                            tc_page.wait_for_timeout(1000)
-                            if not tc_page.locator("li.btn-next:not(.btn-disabled)").is_visible():
-                                break
-                    except Exception:
-                        break
-            else:
-                print("请在独立Chrome中打开腾讯招聘官网！")
-    except Exception as e:
-        print(f"CDP 腾讯拦截失败: {e}")
+def fetch_tencent_jobs(max_pages: int = 120) -> List[Dict[str, str]]:
+    adapter = get_adapter("tencent")
+    if adapter is None:
+        return []
 
-    items = []
-    for data in payloads:
-        d = data.get("data") or {}
-        lst = d.get("positionList") or []
-        if isinstance(lst, list):
-            items.extend(lst)
+    items: List[Dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        try:
+            page_items = adapter.fetch_list(page) or []
+        except Exception:
+            page_items = []
+        if not page_items:
+            break
+        items.extend(page_items)
+        if REQUEST_DELAY_SECONDS > 0:
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     rows: List[Dict[str, str]] = []
     for it in items:
-        post_id = norm(it.get("postId"))
-        title = norm(it.get("positionTitle"))
-        city = norm(it.get("workCities"))
-        recruit_type = norm(it.get("projectName") or it.get("recruitLabelName"))
-        raw_tags = norm(
-            f"{it.get('projectName') or ''} {it.get('recruitLabelName') or ''} {it.get('groupTag') or ''} {it.get('positionFamily') or ''}"
-        )
-        
-        desc = ""
-        req = ""
-        detail_publish = ""
-        detail_deadline = ""
-        detail_update = ""
-        if post_id:
-            try:
-                import requests
-                import time
-                detail_resp = requests.get(
-                    "https://join.qq.com/api/v1/jobDetails/getJobDetailsByPostId",
-                    params={"postId": post_id, "timestamp": str(int(time.time() * 1000))},
-                    headers={"User-Agent": "Mozilla/5.0"},
-                    timeout=10,
-                ).json().get("data") or {}
-                desc = norm(detail_resp.get("desc") or detail_resp.get("topicDetail") or detail_resp.get("introduction"))
-                req = norm(detail_resp.get("request") or detail_resp.get("require") or detail_resp.get("topicRequirement"))
-                detail_publish = detail_resp.get("publishTime") or detail_resp.get("createTime") or detail_resp.get("postTime")
-                detail_deadline = detail_resp.get("deadline") or detail_resp.get("endTime") or detail_resp.get("finishTime")
-                detail_update = detail_resp.get("updateTime")
-            except Exception:
-                pass
-        
-        link = f"https://join.qq.com/post.html?query=p_1&postId={post_id}" if post_id else ""
-
-        if not title:
+        parsed = adapter.parse(it)
+        if not parsed.get("title"):
             continue
-        collect_ts = time.strftime("%Y-%m-%d %H:%M:%S")
-        raw_publish = normalize_time_value(
-            it.get("publishTime")
-            or it.get("createTime")
-            or detail_publish
-        )
-        update_proxy = normalize_time_value(it.get("updateTime") or detail_update)
+        collect_ts = parsed.get("collect_time", time.strftime("%Y-%m-%d %H:%M:%S"))
+        raw_publish = normalize_time_value(parsed.get("publish_time"))
+        update_proxy = normalize_time_value(parsed.get("update_time"))
         if is_time_like(raw_publish):
             publish_time = raw_publish
             publish_source = "real_api"
@@ -553,21 +498,22 @@ def fetch_tencent_jobs() -> List[Dict[str, str]]:
             publish_time = update_proxy
             publish_source = "official_update_proxy"
         else:
-            publish_time = collect_ts
-            publish_source = "official_update_proxy"
-        raw_deadline = normalize_time_value(
-            it.get("deadline")
-            or it.get("endTime")
-            or detail_deadline
-        ) or infer_deadline_from_text(f"{desc} {req}")
-        deadline = raw_deadline if is_time_like(raw_deadline) else UNKNOWN_DEADLINE
+            publish_time = UNKNOWN_PUBLISH_TIME
+            publish_source = "unknown"
+        raw_deadline = normalize_time_value(parsed.get("deadline")) or infer_deadline_from_text(parsed.get("jd_raw", ""))
+        if is_time_like(raw_deadline):
+            deadline = raw_deadline
+            deadline_source = "real_api_or_text"
+        else:
+            deadline = UNKNOWN_DEADLINE
+            deadline_source = "unknown"
         rows.append(
             {
-                "url": link,
-                "company": "腾讯",
-                "name": title,
-                "city": city,
-                "jd_raw": norm(f"{desc} 岗位要求：{req}"),
+                "url": parsed.get("url", ""),
+                "company": parsed.get("company", "腾讯"),
+                "name": parsed.get("title", ""),
+                "city": parsed.get("city", ""),
+                "jd_raw": parsed.get("jd_raw", ""),
                 "salary": "",
                 "company_size": "",
                 "duration": "",
@@ -575,19 +521,19 @@ def fetch_tencent_jobs() -> List[Dict[str, str]]:
                 "publish_time": publish_time,
                 "deadline": deadline,
                 "collect_time": collect_ts,
-                "source": "official_tencent_api",
-                "recruit_type": recruit_type,
-                "raw_tags": raw_tags,
-                "external_job_id": post_id,
-                "update_time": update_proxy,
+                "source": parsed.get("source", "official_tencent_api"),
+                "recruit_type": parsed.get("recruit_type", ""),
+                "raw_tags": parsed.get("raw_tags", ""),
+                "external_job_id": parsed.get("external_job_id", ""),
+                "update_time": normalize_time_value(parsed.get("update_time", "")),
                 "publish_time_source": publish_source,
-                "deadline_source": "unknown" if deadline == UNKNOWN_DEADLINE else "real_api_or_text",
+                "deadline_source": deadline_source,
             }
         )
     dedup = []
     seen = set()
     for r in rows:
-        key = (r["company"], r["name"], r["city"], r["jd_raw"][:200])
+        key = (r["company"], r["name"], r["city"], r["external_job_id"], r["jd_raw"][:200])
         if key in seen:
             continue
         seen.add(key)
@@ -599,99 +545,24 @@ def fetch_kuaishou_jobs_api(max_pages: int = 120) -> List[Dict[str, str]]:
     adapter = get_adapter("kuaishou")
     if adapter is None:
         return []
-    
-    payloads = []
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0]
-            
-            def on_response(resp):
-                if "campus.kuaishou.cn/recruit/campus/e/api/v1/open/positions/simple" in resp.url:
-                    try:
-                        data = resp.json()
-                        payloads.append(data)
-                    except Exception:
-                        pass
-            
-            context.on("response", on_response)
-            
-            ks_page = None
-            for page in context.pages:
-                if "campus.kuaishou.cn" in page.url:
-                    ks_page = page
-                    break
-            
-            if ks_page:
-                ks_page.bring_to_front()
-                for _ in range(max_pages):
-                    try:
-                        next_btn = ks_page.locator("li.btn-next:not(.disabled)")
-                        if next_btn.is_visible():
-                            next_btn.click()
-                            ks_page.wait_for_timeout(2000)
-                        else:
-                            ks_page.mouse.wheel(0, 1000)
-                            ks_page.wait_for_timeout(1000)
-                            if not ks_page.locator("li.btn-next:not(.disabled)").is_visible():
-                                break
-                    except Exception:
-                        break
-            else:
-                print("请在独立Chrome中打开快手招聘官网！")
-    except Exception as e:
-        print(f"CDP 快手拦截失败: {e}")
 
-    items = []
-    for data in payloads:
-        d = data.get("result") or {}
-        lst = d.get("list") or d.get("positions") or d.get("records") or []
-        if isinstance(lst, list):
-            items.extend(lst)
+    items: List[Dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        try:
+            page_items = adapter.fetch_list(page) or []
+        except Exception:
+            page_items = []
+        if not page_items:
+            break
+        items.extend(page_items)
+        if REQUEST_DELAY_SECONDS > 0:
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     rows: List[Dict[str, str]] = []
     for it in items:
         parsed = adapter.parse(it)
         if not parsed.get("title"):
             continue
-            
-        # Bilibili detail fetching via CDP
-        if len((parsed.get("jd_raw") or "").strip()) < 20:
-            detail = {}
-            try:
-                from playwright.sync_api import sync_playwright
-                with sync_playwright() as p:
-                    browser = p.chromium.connect_over_cdp("http://localhost:9222")
-                    context = browser.contexts[0]
-                    bili_page = None
-                    for page in context.pages:
-                        if "jobs.bilibili.com" in page.url:
-                            bili_page = page
-                            break
-                    if bili_page:
-                        js_code = f"""
-                        async () => {{
-                            const csrf = document.cookie.split('; ').find(row => row.startsWith('bili_jct='))?.split('=')[1] || '';
-                            const res = await fetch('https://jobs.bilibili.com/api/campus/position/detail/{parsed.get("external_job_id")}', {{
-                                headers: {{ 'X-CSRF': csrf }}
-                            }});
-                            return await res.json();
-                        }}
-                        """
-                        resp = bili_page.evaluate(js_code)
-                        detail = (resp or {}).get("data") or {}
-            except Exception:
-                pass
-                
-            if detail:
-                detail_desc = norm(detail.get("positionDescription") or detail.get("description"))
-                detail_req = norm(detail.get("positionRequire") or detail.get("jobRequire"))
-                parsed["jd_raw"] = norm(f"{detail_desc} 岗位要求：{detail_req}") or parsed.get("jd_raw", "")
-                if not normalize_time_value(parsed.get("deadline")):
-                    parsed["deadline"] = normalize_time_value(detail.get("webApplyEndTime"))
-                if not normalize_time_value(parsed.get("publish_time")):
-                    parsed["publish_time"] = normalize_time_value(detail.get("pushTime") or detail.get("publishTime"))
 
         collect_ts = parsed.get("collect_time", time.strftime("%Y-%m-%d %H:%M:%S"))
         raw_publish = normalize_time_value(parsed.get("publish_time"))
@@ -750,101 +621,25 @@ def fetch_xiaohongshu_jobs_api(max_pages: int = 120) -> List[Dict[str, str]]:
     adapter = get_adapter("xiaohongshu")
     if adapter is None:
         return []
-    
-    payloads = []
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0]
-            
-            def on_response(resp):
-                if "job.xiaohongshu.com/websiterecruit/position/pageQueryPosition" in resp.url:
-                    try:
-                        data = resp.json()
-                        payloads.append(data)
-                    except Exception:
-                        pass
-            
-            context.on("response", on_response)
-            
-            xhs_page = None
-            for page in context.pages:
-                if "job.xiaohongshu.com" in page.url:
-                    xhs_page = page
-                    break
-            
-            if xhs_page:
-                xhs_page.bring_to_front()
-                for _ in range(max_pages):
-                    try:
-                        next_btn = xhs_page.locator("li.ant-pagination-next[aria-disabled='false']")
-                        if next_btn.is_visible():
-                            next_btn.click()
-                            xhs_page.wait_for_timeout(2000)
-                        else:
-                            xhs_page.mouse.wheel(0, 1000)
-                            xhs_page.wait_for_timeout(1000)
-                            if not xhs_page.locator("li.ant-pagination-next[aria-disabled='false']").is_visible():
-                                break
-                    except Exception:
-                        break
-            else:
-                print("请在独立Chrome中打开小红书招聘官网！")
-    except Exception as e:
-        print(f"CDP 小红书拦截失败: {e}")
 
-    items = []
-    for data in payloads:
-        d = data.get("data") or {}
-        lst = d.get("list") or d.get("records") or []
-        if isinstance(lst, list):
-            items.extend(lst)
-            
+    items: List[Dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        try:
+            page_items = adapter.fetch_list(page) or []
+        except Exception:
+            page_items = []
+        if not page_items:
+            break
+        items.extend(page_items)
+        if REQUEST_DELAY_SECONDS > 0:
+            time.sleep(REQUEST_DELAY_SECONDS)
+
     rows: List[Dict[str, str]] = []
     for it in items:
         parsed = adapter.parse(it)
         if not parsed.get("title"):
             continue
-        
-        # Detail parsing logic using CDP
-        if len((parsed.get("jd_raw") or "").strip()) < 20:
-            detail = {}
-            try:
-                from playwright.sync_api import sync_playwright
-                with sync_playwright() as p:
-                    browser = p.chromium.connect_over_cdp("http://localhost:9222")
-                    context = browser.contexts[0]
-                    xhs_page = None
-                    for page in context.pages:
-                        if "job.xiaohongshu.com" in page.url:
-                            xhs_page = page
-                            break
-                    if xhs_page:
-                        js_code = f"""
-                        async () => {{
-                            const res = await fetch('https://job.xiaohongshu.com/websiterecruit/position/getPositionDetail', {{
-                                method: 'POST',
-                                headers: {{'Content-Type': 'application/json'}},
-                                body: JSON.stringify({{positionId: '{parsed.get("external_job_id")}'}})
-                            }});
-                            return await res.json();
-                        }}
-                        """
-                        resp = xhs_page.evaluate(js_code)
-                        detail = (resp or {}).get("data") or {}
-            except Exception:
-                pass
-            
-            if detail:
-                detail_desc = norm(detail.get("positionDescription") or detail.get("duty"))
-                detail_req = norm(detail.get("positionRequire") or detail.get("qualification"))
-                parsed["jd_raw"] = norm(f"{detail_desc} 岗位要求：{detail_req}") or parsed.get("jd_raw", "")
-                if not normalize_time_value(parsed.get("deadline")):
-                    parsed["deadline"] = normalize_time_value(detail.get("webApplyEndTime"))
-                if not normalize_time_value(parsed.get("publish_time")):
-                    parsed["publish_time"] = normalize_time_value(detail.get("pushTime") or detail.get("publishTime"))
-            
+
         collect_ts = parsed.get("collect_time", time.strftime("%Y-%m-%d %H:%M:%S"))
         raw_publish = normalize_time_value(parsed.get("publish_time") or parsed.get("update_time"))
         publish_time = raw_publish if is_time_like(raw_publish) else UNKNOWN_PUBLISH_TIME
@@ -1051,56 +846,18 @@ def fetch_bilibili_jobs_api(max_pages: int = 120) -> List[Dict[str, str]]:
         return []
     if hasattr(adapter, "set_mode"):
         adapter.set_mode(is_strict_mode("official_bilibili"))
-    
-    payloads = []
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0]
-            
-            def on_response(resp):
-                if "jobs.bilibili.com/api/campus/position/positionList" in resp.url:
-                    try:
-                        data = resp.json()
-                        payloads.append(data)
-                    except Exception:
-                        pass
-            
-            context.on("response", on_response)
-            
-            bili_page = None
-            for page in context.pages:
-                if "jobs.bilibili.com" in page.url:
-                    bili_page = page
-                    break
-            
-            if bili_page:
-                bili_page.bring_to_front()
-                for _ in range(max_pages):
-                    try:
-                        next_btn = bili_page.locator("li.is-next:not(.is-disabled)")
-                        if next_btn.is_visible():
-                            next_btn.click()
-                            bili_page.wait_for_timeout(2000)
-                        else:
-                            bili_page.mouse.wheel(0, 1000)
-                            bili_page.wait_for_timeout(1000)
-                            if not bili_page.locator("li.is-next:not(.is-disabled)").is_visible():
-                                break
-                    except Exception:
-                        break
-            else:
-                print("请在独立Chrome中打开B站招聘官网！")
-    except Exception as e:
-        print(f"CDP B站拦截失败: {e}")
 
-    items = []
-    for data in payloads:
-        d = data.get("data") or {}
-        lst = d.get("list") or d.get("records") or []
-        if isinstance(lst, list):
-            items.extend(lst)
+    items: List[Dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        try:
+            page_items = adapter.fetch_list(page) or []
+        except Exception:
+            page_items = []
+        if not page_items:
+            break
+        items.extend(page_items)
+        if REQUEST_DELAY_SECONDS > 0:
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     rows: List[Dict[str, str]] = []
     for it in items:
