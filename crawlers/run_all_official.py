@@ -18,6 +18,7 @@ from crawlers.io import ensure_output_dirs
 from crawlers.jd_crawler import run as run_jd
 from crawlers.kuaishou_crawler import run as run_kuaishou
 from crawlers.meituan_crawler import run as run_meituan
+from crawlers.shixiseng_crawler import run as run_shixiseng
 from crawlers.tencent_crawler import run as run_tencent
 from crawlers.xiaohongshu_crawler import run as run_xiaohongshu
 
@@ -32,6 +33,7 @@ RUNNERS: List[Tuple[str, Callable[[], Dict[str, str]]]] = [
     ("jd", run_jd),
     ("bilibili", run_bilibili),
     ("baidu", run_baidu),
+    ("shixiseng", run_shixiseng),
 ]
 
 SOURCE_HEALTH_URLS: Dict[str, str] = {
@@ -44,6 +46,7 @@ SOURCE_HEALTH_URLS: Dict[str, str] = {
     "jd": "https://campus.jd.com",
     "bilibili": "https://jobs.bilibili.com/api/campus/position/positionList",
     "baidu": "https://talent.baidu.com",
+    "shixiseng": "https://www.shixiseng.com",
 }
 
 FALLBACK_HEALTH_URLS: Dict[str, str] = {
