@@ -12,6 +12,7 @@ import re
 import sys
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import pandas as pd
 
@@ -55,108 +56,66 @@ def apply_font_map(text: str, font_map: Dict[str, str]) -> str:
 
 
 def _fetch_one_page(page, page_num: int, city: str, keyword: str, font_map: Dict[str, str]) -> List[Dict[str, str]]:
-    """Fetch one page of search results, return list of partial job records with URLs."""
     params = {"page": page_num, "city": city}
     if keyword:
         params["keyword"] = keyword
-    qs = "&".join(f"{k}={v}" for k, v in params.items())
-    url = f"{SEARCH_URL}?{qs}"
+    url = f"{SEARCH_URL}?{urlencode(params)}"
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.goto(url, wait_until="load", timeout=20000)
     except Exception:
         return []
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(2000)
 
-    # Scroll to trigger lazy loading
-    for _ in range(6):
-        page.mouse.wheel(0, 1500)
-        page.wait_for_timeout(600)
+    # Fast scroll
+    for _ in range(4):
+        page.mouse.wheel(0, 2000)
+        page.wait_for_timeout(300)
 
-    # Extract job cards
-    cards = page.locator(".intern-wrap")
-    count = cards.count()
-    if count == 0:
+    # Use JS to extract card data in one shot — much faster than per-element locator
+    rows: List[Dict[str, str]] = []
+    cards_data = page.evaluate("""() => {
+        const cards = document.querySelectorAll('.intern-wrap');
+        const results = [];
+        cards.forEach(function(c) {
+            var link = c.querySelector('a[href*="/intern/"]');
+            var href = link ? link.getAttribute('href') : '';
+            var title = link ? link.innerText.trim() : '';
+            var companyEl = c.querySelector('.intern-detail__company a[title]');
+            var company = companyEl ? companyEl.getAttribute('title') : (
+                c.querySelector('.intern-detail__company') ? c.querySelector('.intern-detail__company').innerText.trim() : ''
+            );
+            var salary = c.querySelector('.day_money') ? c.querySelector('.day_money').innerText.trim() : '';
+            var loc = c.querySelector('.city') ? c.querySelector('.city').innerText.trim() : '';
+            results.push({href: href, title: title, company: company, salary: salary, loc: loc});
+        });
+        return results;
+    }""")
+
+    if not cards_data:
         return []
 
-    rows: List[Dict[str, str]] = []
-    for i in range(count):
-        try:
-            card = cards.nth(i)
-            # URL — always unencrypted (href attribute)
-            link_el = card.locator("a.intern-detail__title").first
-            detail_url = ""
-            try:
-                href = link_el.get_attribute("href") or ""
-                detail_url = href if href.startswith("http") else f"{BASE_URL}{href}"
-            except Exception:
-                pass
+    for cd in cards_data:
+        detail_url = str(cd.get("href", ""))
+        if detail_url and not detail_url.startswith("http"):
+            detail_url = f"{BASE_URL}{detail_url}"
+        job_id = re.search(r"/intern/([A-Za-z0-9_]+)", detail_url)
+        job_id = job_id.group(1) if job_id else ""
 
-            if not detail_url:
-                # Try alternative link selectors
-                for a in card.locator("a").all():
-                    try:
-                        h = a.get_attribute("href") or ""
-                        if "/intern/" in h:
-                            detail_url = h if h.startswith("http") else f"{BASE_URL}{h}"
-                            break
-                    except Exception:
-                        pass
-
-            job_id = re.search(r"/intern/([A-Za-z0-9_]+)", detail_url)
-            job_id = job_id.group(1) if job_id else ""
-
-            # Title (may be encrypted)
-            title = ""
-            try:
-                title = apply_font_map(_norm(link_el.inner_text()), font_map)
-            except Exception:
-                pass
-
-            # Company
-            company = ""
-            try:
-                company_div = card.locator(".intern-detail__company a[title]").first
-                company = apply_font_map(_norm(company_div.get_attribute("title") or ""), font_map)
-            except Exception:
-                try:
-                    company_div2 = card.locator(".intern-detail__company").first
-                    company = apply_font_map(_norm(company_div2.inner_text()), font_map)
-                except Exception:
-                    pass
-
-            # Salary
-            salary = ""
-            try:
-                salary_el = card.locator(".day_money").first
-                salary = apply_font_map(_norm(salary_el.inner_text()), font_map)
-            except Exception:
-                pass
-
-            # Location
-            location = city
-            try:
-                loc_el = card.locator(".city").first
-                location = apply_font_map(_norm(loc_el.inner_text()), font_map)
-            except Exception:
-                pass
-
-            rows.append({
-                "external_job_id": job_id,
-                "name": title,
-                "company": company or "未知公司",
-                "city": location,
-                "salary": salary,
-                "url": detail_url,
-                "source": K,
-                "recruit_type": "实习",
-                "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "publish_time": "unknown",
-                "deadline": "unknown",
-                "jd_raw": "",
-                "raw_tags": keyword if keyword else "",
-            })
-        except Exception:
-            continue
+        rows.append({
+            "external_job_id": job_id,
+            "name": apply_font_map(_norm(cd.get("title", "")), font_map),
+            "company": apply_font_map(_norm(cd.get("company", "")), font_map) or "未知公司",
+            "city": apply_font_map(_norm(cd.get("loc", "")), font_map) or city,
+            "salary": apply_font_map(_norm(cd.get("salary", "")), font_map),
+            "url": detail_url,
+            "source": K,
+            "recruit_type": "实习",
+            "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "publish_time": "unknown",
+            "deadline": "unknown",
+            "jd_raw": "",
+            "raw_tags": keyword if keyword else "",
+        })
 
     return rows
 
@@ -235,16 +194,15 @@ def _fetch_detail(page, job: Dict[str, str], font_map: Dict[str, str]) -> Dict[s
 def _fetch_shixiseng(
     city: str = "上海",
     keywords: Optional[List[str]] = None,
-    max_pages: int = 20,
-    fetch_details: bool = True,
-    max_details: int = 200,
+    max_pages: int = 5,
+    max_details: int = 0,
 ) -> List[Dict[str, str]]:
     font_map = load_font_map()
     all_rows: List[Dict[str, str]] = []
     seen_urls = set()
 
     if keywords is None:
-        keywords = ["", "数据分析", "数据", "产品", "运营", "商业分析", "策略", "算法"]
+        keywords = [""]
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -254,6 +212,7 @@ def _fetch_shixiseng(
             locale="zh-CN",
         )
         page = ctx.new_page()
+        detail_page = ctx.new_page() if max_details > 0 else None
 
         try:
             for keyword in keywords:
@@ -267,14 +226,29 @@ def _fetch_shixiseng(
                         if url and url not in seen_urls:
                             seen_urls.add(url)
                             all_rows.append(row)
-                    print(f"  [shixiseng] kw={kw or '(all)'} page={page_num} cards={len(page_rows)} total={len(all_rows)}")
-                    time.sleep(2)
+                    time.sleep(1)
+
+            # Optionally fetch details
+            if max_details > 0 and detail_page:
+                details_done = 0
+                for row in all_rows:
+                    if details_done >= max_details:
+                        break
+                    d = _fetch_detail(detail_page, row, font_map)
+                    if d:
+                        for k, v in d.items():
+                            if v:
+                                row[k] = v
+                        details_done += 1
+                    time.sleep(0.8)
         finally:
             page.close()
+            if detail_page:
+                detail_page.close()
             ctx.close()
             browser.close()
 
-    # Dedup by URL
+    # Dedup
     dedup: List[Dict[str, str]] = []
     seen = set()
     for r in all_rows:
@@ -282,44 +256,14 @@ def _fetch_shixiseng(
         if u and u not in seen:
             seen.add(u)
             dedup.append(r)
-
-    # Fetch detail pages
-    if fetch_details and dedup:
-        details_fetched = 0
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            ctx = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                viewport={"width": 1920, "height": 1080},
-                locale="zh-CN",
-            )
-            page = ctx.new_page()
-            try:
-                for row in dedup:
-                    if details_fetched >= max_details:
-                        break
-                    detail = _fetch_detail(page, row, font_map)
-                    if detail:
-                        for k, v in detail.items():
-                            if v:
-                                row[k] = v
-                        details_fetched += 1
-                    if details_fetched % 10 == 0:
-                        print(f"  [shixiseng] details: {details_fetched}/{min(len(dedup), max_details)}")
-                    time.sleep(1.5)
-            finally:
-                page.close()
-                ctx.close()
-                browser.close()
-
     return dedup
 
 
 def run() -> dict:
     paths = default_paths(K)
     city = os.getenv("SHIXISENG_CITY", "上海")
-    max_pages = int(os.getenv("SHIXISENG_MAX_PAGES", "3"))
-    max_details = int(os.getenv("SHIXISENG_MAX_DETAILS", "50"))
+    max_pages = int(os.getenv("SHIXISENG_MAX_PAGES", "5"))
+    max_details = int(os.getenv("SHIXISENG_MAX_DETAILS", "0"))
 
     result = run_single_source(
         K,
