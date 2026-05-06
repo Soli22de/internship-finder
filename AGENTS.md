@@ -46,13 +46,15 @@ ResuMiner/ (submodule)                                   │   ├─ link healt
 | 6 | 阿里 | official_alibaba | API adapter | OK |
 | 7 | 京东 | official_jd_api | API adapter | OK |
 | 8 | 哔哩哔哩 | official_bilibili | API adapter | OK (preflight fixed) |
-| 9 | 百度 | official_baidu | Playwright headless | **New** |
+| 9 | 百度 | official_baidu | Playwright headless | New (needs debugging, 0 rows) |
+| 10 | 实习僧 | shixiseng | Playwright headless | **New** (no RPC, font_map optional) |
 
 ### Pending / Future:
-- [ ] 实习僧 real-time (have historical data + ResuMiner crawler skeleton)
 - [ ] 猎聘 real-time (ResuMiner skeleton, needs RPC server)
 - [ ] BOSS直聘 (highest value, hardest anti-bot)
 - [ ] 51job / 应届生 (lower priority)
+- [ ] Fix Baidu crawler (0 rows)
+- [ ] Font map auto-extraction for shixiseng (currently encrypted fields show garbled)
 - [ ] Database migration (currently CSV-only)
 - [ ] Semantic resume matching (currently keyword-based)
 - [ ] FastAPI backend + WeChat mini-program
