@@ -1,5 +1,5 @@
 CRAWLER_CONFIG = {
-    "enabled_companies": ["bytedance", "baidu", "kuaishou", "tencent", "xiaohongshu", "meituan", "alibaba", "jd", "bilibili", "shixiseng"],
+    "enabled_companies": ["bytedance", "baidu", "kuaishou", "tencent", "xiaohongshu", "meituan", "alibaba", "jd", "bilibili", "shixiseng", "boss"],
     "request_delay_seconds": 3,
     "max_retries": 3,
     "strict_mode": {
@@ -13,5 +13,6 @@ CRAWLER_CONFIG = {
         "jd": False,
         "bilibili": False,
         "shixiseng": False,
+        "boss": False,
     },
 }

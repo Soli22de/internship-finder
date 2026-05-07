@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 from crawlers.alibaba_crawler import run as run_alibaba
 from crawlers.baidu_crawler import run as run_baidu
 from crawlers.bilibili_crawler import run as run_bilibili
+from crawlers.boss_crawler import run as run_boss
 from crawlers.bytedance_crawler import run as run_bytedance
 from crawlers.io import ensure_output_dirs
 from crawlers.jd_crawler import run as run_jd
@@ -34,6 +35,7 @@ RUNNERS: List[Tuple[str, Callable[[], Dict[str, str]]]] = [
     ("bilibili", run_bilibili),
     ("baidu", run_baidu),
     ("shixiseng", run_shixiseng),
+    ("boss", run_boss),
 ]
 
 SOURCE_HEALTH_URLS: Dict[str, str] = {
@@ -47,6 +49,7 @@ SOURCE_HEALTH_URLS: Dict[str, str] = {
     "bilibili": "https://jobs.bilibili.com/api/campus/position/positionList",
     "baidu": "https://talent.baidu.com",
     "shixiseng": "https://www.shixiseng.com",
+    "boss": "https://www.zhipin.com",
 }
 
 FALLBACK_HEALTH_URLS: Dict[str, str] = {
