@@ -126,9 +126,10 @@ def _crawl_boss(city: str = "101020100", keyword: str = "实习",
                         const jobId = href.match(/\\/job_detail\\/([^\\/]+)\\.html/);
                         results.push({
                             name: getText('.job-name, [class*=job-name]'),
-                            salary: getText('.salary, [class*=salary]'),
-                            company: getText('.company-name, .brand-name, [class*=company]'),
-                            city: getText('.job-area, [class*=job-area], [class*=city]'),
+                            salary: getText('.job-salary, [class*=job-salary]'),
+                            company: getText('.boss-name, [class*=boss-name]'),
+                            city: getText('.company-location'),
+                            tags: Array.from(c.querySelectorAll('.tag-list li')).map(function(l){return l.innerText.trim();}).join(' | '),
                             url: href.startsWith('http') ? href : 'https://www.zhipin.com' + href,
                             jobId: jobId ? jobId[1] : '',
                         });
@@ -153,6 +154,9 @@ def _crawl_boss(city: str = "101020100", keyword: str = "实习",
                     "publish_time": "",
                     "deadline": "",
                     "recruit_type": "实习",
+                    "raw_tags": _norm(j.get("tags", "")),
+                    "duration": "",
+                    "academic": "",
                     "source": K,
                     "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                 })
@@ -164,6 +168,16 @@ def _crawl_boss(city: str = "101020100", keyword: str = "实习",
         ctx.close()
         browser.close()
 
+    # Enrich with JD from mobile detail pages
+    if all_rows:
+        enriched = _fetch_boss_details(all_rows)
+        for r in enriched:
+            for orig in all_rows:
+                if orig.get("url") == r.get("url"):
+                    orig["jd_raw"] = r.get("jd_raw", orig.get("jd_raw", ""))
+                    orig["publish_time"] = r.get("publish_time", orig.get("publish_time", ""))
+                    break
+
     # Dedup
     seen = set()
     dedup = []
@@ -173,6 +187,54 @@ def _crawl_boss(city: str = "101020100", keyword: str = "实习",
             seen.add(u)
             dedup.append(r)
     return dedup
+
+
+def _fetch_boss_details(jobs: List[Dict[str, str]], max_details: int = 30) -> List[Dict[str, str]]:
+    """Visit mobile detail pages to extract JD text."""
+    cookies = _get_cookies()
+    if not cookies:
+        return []
+    results = []
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        ctx = browser.new_context(locale="zh-CN", viewport={"width": 400, "height": 800})
+        ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        ctx.add_cookies(cookies)
+        page = ctx.new_page()
+
+        done = 0
+        for job in jobs:
+            if done >= max_details:
+                break
+            job_id = job.get("external_job_id", "")
+            if not job_id:
+                continue
+            url = f"https://m.zhipin.com/job_detail/{job_id}.html"
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(3000)
+            except Exception:
+                continue
+            if "about:blank" in page.url or "security" in page.url:
+                continue
+
+            try:
+                text = page.inner_text("body")
+                results.append({
+                    "url": job.get("url", ""),
+                    "jd_raw": _norm(text[:5000]),
+                    "publish_time": "",
+                })
+                done += 1
+            except Exception:
+                continue
+
+        page.close()
+        ctx.close()
+        browser.close()
+
+    print(f"  [boss] fetched {len(results)} detail pages")
+    return results
 
 
 def run() -> dict:

@@ -61,10 +61,10 @@ def _fetch_one_page(page, page_num: int, city: str, keyword: str, font_map: Dict
         params["keyword"] = keyword
     url = f"{SEARCH_URL}?{urlencode(params)}"
     try:
-        page.goto(url, wait_until="load", timeout=20000)
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
     except Exception:
         return []
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(4000)
 
     # Fast scroll
     for _ in range(4):
@@ -263,7 +263,7 @@ def run() -> dict:
     paths = default_paths(K)
     city = os.getenv("SHIXISENG_CITY", "上海")
     max_pages = int(os.getenv("SHIXISENG_MAX_PAGES", "5"))
-    max_details = int(os.getenv("SHIXISENG_MAX_DETAILS", "0"))
+    max_details = int(os.getenv("SHIXISENG_MAX_DETAILS", "50"))
 
     result = run_single_source(
         K,
