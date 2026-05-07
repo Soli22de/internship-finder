@@ -46,7 +46,7 @@ ResuMiner/ (submodule)                                   │   ├─ link healt
 | 6 | 阿里 | official_alibaba | API adapter | OK |
 | 7 | 京东 | official_jd_api | API adapter | OK |
 | 8 | 哔哩哔哩 | official_bilibili | API adapter | OK (preflight fixed) |
-| 9 | 百度 | official_baidu | Playwright headless | New (needs debugging, 0 rows) |
+| 9 | 百度 | official_baidu | Playwright Firefox | **Fixed** (was 0 rows, now Firefox+DOM) |
 | 10 | 实习僧 | shixiseng | Playwright headless | **Working** (60 rows, font encryption affects salary only) |
 | 11 | BOSS直聘 | boss | Playwright Firefox | **Working** (real Firefox cookies + double-nav bypass) |
 
