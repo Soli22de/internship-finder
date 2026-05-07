@@ -191,6 +191,27 @@ def _fetch_detail(page, job: Dict[str, str], font_map: Dict[str, str]) -> Dict[s
     return result
 
 
+def _extract_font_map_from_bytes(font_data: bytes) -> Dict[str, str]:
+    """Extract PUA->character mapping from shixiseng's WOFF font file."""
+    try:
+        from fontTools.ttLib import TTFont
+        import io, re
+        font = TTFont(io.BytesIO(font_data))
+        cmap = font.getBestCmap()
+        mapping = {}
+        for code, glyph_name in cmap.items():
+            if 0xE000 <= code <= 0xF8FF:
+                m = re.search(r'uni([0-9A-Fa-f]{2,6})', str(glyph_name))
+                if m:
+                    actual = int(m.group(1), 16)
+                    if 32 <= actual <= 0x10FFFF:
+                        mapping[chr(code)] = chr(actual)
+        font.close()
+        return mapping
+    except Exception:
+        return {}
+
+
 def _fetch_shixiseng(
     city: str = "上海",
     keywords: Optional[List[str]] = None,
@@ -214,6 +235,47 @@ def _fetch_shixiseng(
         page = ctx.new_page()
         detail_page = ctx.new_page() if max_details > 0 else None
 
+        # Intercept font file to build font_map live
+        live_font_map = {}
+        font_urls = []
+        def on_font_request(req):
+            if "iconfonts/file" in req.url:
+                font_urls.append(req.url)
+        def on_font_response(resp):
+            if "iconfonts/file" in resp.url:
+                try:
+                    data = resp.body()
+                    if data and len(data) > 100:
+                        fm = _extract_font_map_from_bytes(data)
+                        live_font_map.update(fm)
+                except Exception:
+                    pass
+        page.on("request", on_font_request)
+        page.on("response", on_font_response)
+
+        # Load first page to trigger font download
+        first_url = f"{SEARCH_URL}?{urlencode({'page': 1, 'city': city})}"
+        try:
+            page.goto(first_url, wait_until="domcontentloaded", timeout=20000)
+            page.wait_for_timeout(3000)
+        except Exception:
+            pass
+
+        # Merge cached font_map with live-extracted one
+        if live_font_map:
+            font_map.update(live_font_map)
+            print(f"  [shixiseng] font_map live: {len(live_font_map)} chars")
+
+        # Cache the font map for future runs
+        if live_font_map:
+            try:
+                os.makedirs(os.path.dirname(FONT_MAP_PATH), exist_ok=True)
+                with open(FONT_MAP_PATH, "w", encoding="utf-8") as f:
+                    json.dump(font_map, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        # Now crawl all keywords
         try:
             for keyword in keywords:
                 kw = keyword.strip() if keyword else ""
