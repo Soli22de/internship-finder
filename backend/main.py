@@ -1,6 +1,7 @@
 """FastAPI backend — unified crawl API + job query + resume matching."""
 import os
 import sys
+import logging
 from datetime import datetime
 from typing import List, Optional
 
@@ -10,8 +11,13 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from backend.db import get_db, init_db
+
+scheduler = BackgroundScheduler()
 
 app = FastAPI(title="Internship Finder API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -30,7 +36,32 @@ class MatchRequest(BaseModel):
 @app.on_event("startup")
 def startup():
     init_db()
-    print("[API] Database initialized.")
+    # Schedule: crawl all sources every 3 days at 2:00 AM
+    def scheduled_crawl():
+        from backend.crawl_engine import run_all_sources
+        print(f"[Scheduler] Starting scheduled crawl at {datetime.now()}")
+        try:
+            results = run_all_sources()
+            for r in results:
+                print(f"  [{r.source}] {len(r.rows)} rows, {r.new} new, {r.error or 'OK'}")
+        except Exception as e:
+            print(f"[Scheduler] Crawl failed: {e}")
+
+    scheduler.add_job(
+        scheduled_crawl,
+        CronTrigger(hour=2, minute=0, day="*/3"),
+        id="scheduled_crawl",
+        name="Crawl all sources every 3 days",
+        replace_existing=True,
+    )
+    scheduler.start()
+    print(f"[API] Scheduler started. Next crawl every 3 days at 2:00 AM")
+
+
+@app.on_event("shutdown")
+def shutdown():
+    scheduler.shutdown(wait=False)
+    print("[API] Scheduler stopped.")
 
 
 # ── Health ──────────────────────────────────────────────
