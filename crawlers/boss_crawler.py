@@ -1,6 +1,6 @@
 """
-BOSS直聘 crawler — connects to REAL user Chrome via CDP.
-Requires Chrome running on port 9222 with a logged-in BOSS session.
+BOSS直聘 crawler — uses Playwright Firefox + cookies from user's real Firefox.
+No CDP needed. The user logs into BOSS in Firefox once; crawler reuses those cookies.
 """
 import json
 import os
@@ -18,7 +18,8 @@ from playwright.sync_api import sync_playwright
 from crawlers.base_runner import default_paths, run_single_source
 
 K = "boss"
-CHROME_URL = "http://localhost:9222"
+COOKIE_CACHE = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                            "chrome_dev_profile", "boss_cookies.json")
 
 
 def _norm(x: Any) -> str:
@@ -27,68 +28,141 @@ def _norm(x: Any) -> str:
     return re.sub(r"\s+", " ", str(x)).strip()
 
 
-def _crawl_boss(city: str = "101020100", keyword: str = "数据分析",
-                max_pages: int = 20) -> List[Dict[str, str]]:
-    """Connect to user's Chrome, scrape BOSS jobs via API interception."""
+def _get_cookies() -> List[Dict[str, str]]:
+    """Get BOSS cookies directly from Firefox (not cache)."""
+    try:
+        import browser_cookie3
+        cookies = browser_cookie3.firefox(domain_name="zhipin.com")
+        ck_list = [{"name": ck.name, "value": ck.value, "domain": ".zhipin.com", "path": "/"}
+                   for ck in cookies]
+        if ck_list:
+            # Cache for backup
+            ck_dict = {ck["name"]: ck["value"] for ck in ck_list}
+            os.makedirs(os.path.dirname(COOKIE_CACHE), exist_ok=True)
+            with open(COOKIE_CACHE, "w", encoding="utf-8") as f:
+                json.dump(ck_dict, f, ensure_ascii=False)
+            return ck_list
+    except Exception as e:
+        print(f"  [boss] Firefox cookie error: {e}")
+
+    # Fallback: try cache
+    if os.path.exists(COOKIE_CACHE):
+        try:
+            with open(COOKIE_CACHE, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if cached:
+                return [{"name": n, "value": v, "domain": ".zhipin.com", "path": "/"}
+                        for n, v in cached.items()]
+        except Exception:
+            pass
+    print("  [boss] No cookies. Log into BOSS in Firefox first.")
+    return []
+
+
+def _crawl_boss(city: str = "101020100", keyword: str = "实习",
+                max_pages: int = 5) -> List[Dict[str, str]]:
+    """Scrape BOSS jobs using Playwright Firefox + real cookies."""
+    cookies = _get_cookies()
+    if not cookies:
+        print("  [boss] No cookies found. Log into BOSS in Firefox first.")
+        return []
+
     all_rows: List[Dict[str, str]] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(CHROME_URL)
-        context = browser.contexts[0]
-        page = context.new_page()
+        browser = p.firefox.launch(headless=True)
+        ctx = browser.new_context(
+            locale="zh-CN",
+            viewport={"width": 1920, "height": 1080},
+        )
+        # Hide automation traces
+        ctx.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+        ctx.add_cookies(cookies)
+        page = ctx.new_page()
 
-        api_payloads: List[Dict] = []
+        for pg in range(1, max_pages + 1):
+            base_query = f"query={keyword}&city={city}"
+            if pg > 1:
+                base_query += f"&page={pg}"
+            url = f"https://www.zhipin.com/web/geek/job?{base_query}"
 
-        def on_response(resp):
-            url = resp.url
-            ct = resp.headers.get("content-type", "")
-            if "json" not in ct:
-                return
-            if "/api" not in url and "/wapi" not in url:
-                return
-            if "zhipin.com" not in url:
-                return
-            try:
-                data = resp.json()
-                api_payloads.append({"url": url, "data": data})
-            except Exception:
-                pass
-
-        page.on("response", on_response)
-
-        base_url = f"https://www.zhipin.com/web/geek/job?query={keyword}&city={city}"
-        page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(5000)
-
-        # Scroll to trigger lazy load
-        for _ in range(8):
-            page.mouse.wheel(0, 2000)
-            page.wait_for_timeout(800)
-
-        # Also try clicking next page
-        for pg in range(2, max_pages + 1):
-            try:
-                next_btn = page.locator(".page-next, .next, [class*=next]").first
-                if next_btn.is_visible():
-                    next_btn.click()
-                    page.wait_for_timeout(3000)
+            # Navigate twice: first triggers JS security challenge, second passes with token
+            for attempt in range(2):
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(5000)
+                except Exception as e:
+                    print(f"  [boss] nav error: {e}")
+                    break
+                curr = page.url
+                if "security" in curr or "about:blank" in curr:
+                    print(f"  [boss] attempt {attempt+1}: security page, waiting...")
+                    page.wait_for_timeout(10000)
                 else:
                     break
+
+            page.wait_for_timeout(3000)
+
+            if "security" in page.url or "about:blank" in page.url:
+                print(f"  [boss] Anti-bot triggered on page {pg}")
+                break
+
+            try:
+                jobs = page.evaluate("""(pg) => {
+                    const cards = document.querySelectorAll('[class*=job-card]');
+                    const results = [];
+                    const limit = pg > 1 ? 50 : 60;
+                    cards.forEach(c => {
+                        if (results.length >= limit) return;
+                        if (!c.querySelector('[class*=job-name]')) return;
+                        const getText = (s) => {
+                            const el = c.querySelector(s);
+                            return el ? el.innerText.trim() : '';
+                        };
+                        const link = c.querySelector('a[href*=\"/job_detail/\"]');
+                        const href = link ? (link.getAttribute('href') || '') : '';
+                        const jobId = href.match(/\\/job_detail\\/([^\\/]+)\\.html/);
+                        results.push({
+                            name: getText('.job-name, [class*=job-name]'),
+                            salary: getText('.salary, [class*=salary]'),
+                            company: getText('.company-name, .brand-name, [class*=company]'),
+                            city: getText('.job-area, [class*=job-area], [class*=city]'),
+                            url: href.startsWith('http') ? href : 'https://www.zhipin.com' + href,
+                            jobId: jobId ? jobId[1] : '',
+                        });
+                    });
+                    return results;
+                }""", pg)
             except Exception:
                 break
 
-        # Try to extract jobs from API payloads
-        for payload in api_payloads:
-            rows = _parse_boss_api(payload["data"], payload["url"])
-            all_rows.extend(rows)
+            if not jobs:
+                break
 
-        # Fallback: parse DOM if API extraction returned nothing
-        if not all_rows:
-            rows = _parse_boss_dom(page)
-            all_rows.extend(rows)
+            for j in jobs:
+                all_rows.append({
+                    "name": _norm(j.get("name", "")),
+                    "company": _norm(j.get("company", "")),
+                    "city": _norm(j.get("city", "")),
+                    "salary": _norm(j.get("salary", "")),
+                    "url": _norm(j.get("url", "")),
+                    "external_job_id": _norm(j.get("jobId", "")),
+                    "jd_raw": "",
+                    "publish_time": "",
+                    "deadline": "",
+                    "recruit_type": "实习",
+                    "source": K,
+                    "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                })
+
+            print(f"  [boss] page {pg}: {len(jobs)} jobs (total {len(all_rows)})")
+            time.sleep(2)
 
         page.close()
-        # Don't close context/browser in CDP mode
+        ctx.close()
+        browser.close()
 
     # Dedup
     seen = set()
@@ -101,105 +175,10 @@ def _crawl_boss(city: str = "101020100", keyword: str = "数据分析",
     return dedup
 
 
-def _parse_boss_api(data: Dict, url: str) -> List[Dict[str, str]]:
-    """Extract jobs from BOSS API JSON response."""
-    rows = []
-
-    def walk(obj):
-        if isinstance(obj, dict):
-            yield obj
-            for v in obj.values():
-                yield from walk(v)
-        elif isinstance(obj, list):
-            for x in obj:
-                yield from walk(x)
-
-    for d in walk(data):
-        if not isinstance(d, dict):
-            continue
-        job_id = _norm(d.get("jobId") or d.get("encryptJobId") or "")
-        name = _norm(d.get("jobName") or d.get("name") or "")
-        if not name or not job_id:
-            continue
-        salary = _norm(d.get("salaryDesc") or d.get("salary") or "")
-        city = _norm(d.get("cityName") or d.get("city") or "")
-        company = ""
-        brand = d.get("brandName") or d.get("brand") or {}
-        if isinstance(brand, dict):
-            company = _norm(brand.get("brandName") or "")
-        else:
-            company = _norm(brand)
-        if not company:
-            company = _norm(d.get("brandName", ""))
-
-        rows.append({
-            "name": name,
-            "company": company,
-            "city": city,
-            "salary": salary,
-            "jd_raw": _norm(d.get("jobDesc", "")),
-            "url": f"https://www.zhipin.com/job_detail/{job_id}.html",
-            "external_job_id": job_id,
-            "publish_time": _norm(d.get("firstPublishTime", "")),
-            "deadline": "",
-            "recruit_type": "实习",
-            "source": K,
-            "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-        })
-
-    return rows
-
-
-def _parse_boss_dom(page) -> List[Dict[str, str]]:
-    """Fallback: extract from DOM if API interception failed."""
-    try:
-        cards_data = page.evaluate("""() => {
-            const cards = document.querySelectorAll('.job-card-wrapper, .job-card-box, [class*=job-card]');
-            return Array.from(cards).slice(0, 50).map(c => {
-                const link = c.querySelector('a[href*="/job_detail/"]');
-                const href = link ? link.getAttribute('href') : '';
-                const title = link ? link.innerText.trim() : '';
-                const salary = (c.querySelector('.salary') || c.querySelector('.job-salary') || {}).innerText || '';
-                const company = (c.querySelector('.company-name') || c.querySelector('.brand-name') || c.querySelector('[class*=company]') || {}).innerText || '';
-                const city = (c.querySelector('.job-area') || c.querySelector('.city') || {}).innerText || '';
-                return {href, title, salary, company, city};
-            });
-        }""")
-    except Exception:
-        return []
-
-    rows = []
-    for cd in cards_data or []:
-        href = str(cd.get("href", ""))
-        url = href if href.startswith("http") else f"https://www.zhipin.com{href}"
-        job_id = re.search(r"/job_detail/(.+?)\.html", url)
-        job_id = job_id.group(1) if job_id else url
-
-        if not url:
-            continue
-
-        rows.append({
-            "name": _norm(cd.get("title", "")),
-            "company": _norm(cd.get("company", "")),
-            "city": _norm(cd.get("city", "上海")),
-            "salary": _norm(cd.get("salary", "")),
-            "jd_raw": "",
-            "url": url,
-            "external_job_id": job_id,
-            "publish_time": "",
-            "deadline": "",
-            "recruit_type": "实习",
-            "source": K,
-            "collect_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-        })
-
-    return rows
-
-
 def run() -> dict:
     paths = default_paths(K)
     city = os.getenv("BOSS_CITY", "101020100")
-    keyword = os.getenv("BOSS_KEYWORD", "数据分析")
+    keyword = os.getenv("BOSS_KEYWORD", "实习")
     max_pages = int(os.getenv("BOSS_MAX_PAGES", "5"))
 
     result = run_single_source(
@@ -209,7 +188,7 @@ def run() -> dict:
     )
     pd.DataFrame([result]).to_csv(paths["health"], index=False, encoding="utf-8-sig")
     pd.DataFrame(
-        [{"company": "BOSS直聘", "source": K, "strategy": "cdp", "total": result["rows"], "status": result["status"]}]
+        [{"company": "BOSS直聘", "source": K, "strategy": "firefox+dom", "total": result["rows"], "status": result["status"]}]
     ).to_csv(paths["param_audit"], index=False, encoding="utf-8-sig")
     result["param_audit_path"] = paths["param_audit"]
     return result
