@@ -1,4 +1,5 @@
 """FastAPI backend — unified crawl API + job query + resume matching."""
+import json
 import os
 import sys
 import logging
@@ -6,6 +7,9 @@ from datetime import datetime
 from typing import List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Bypass VPN proxy — MUST be before any requests import
+from utils.no_proxy import *
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,27 +98,42 @@ def list_jobs(
     source: Optional[str] = None,
     keyword: Optional[str] = None,
     active_only: bool = True,
+    dedup: bool = True,
     limit: int = Query(100, le=500),
     offset: int = 0,
 ):
     db = get_db()
-    sql = "SELECT * FROM jobs WHERE 1=1"
+    where = "WHERE 1=1"
     params = []
     if active_only:
-        sql += " AND is_active=1"
+        where += " AND is_active=1"
     if city:
-        sql += " AND city LIKE ?"
+        where += " AND city LIKE ?"
         params.append(f"%{city}%")
     if source:
-        sql += " AND source=?"
+        where += " AND source=?"
         params.append(source)
     if keyword:
-        sql += " AND (title LIKE ? OR jd_raw LIKE ?)"
+        where += " AND (title LIKE ? OR jd_raw LIKE ?)"
         params.extend([f"%{keyword}%", f"%{keyword}%"])
-    sql += " ORDER BY first_seen DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
 
+    if dedup:
+        sql = f"""
+            SELECT * FROM (
+                SELECT *, COUNT(*) OVER (PARTITION BY dedup_key) AS source_count,
+                       ROW_NUMBER() OVER (PARTITION BY dedup_key 
+                                          ORDER BY CASE WHEN source LIKE 'resuminer_%' THEN 0 ELSE 1 END,
+                                                   first_seen DESC) AS rn
+                FROM jobs {where}
+            ) sub WHERE rn=1
+            ORDER BY first_seen DESC LIMIT ? OFFSET ?
+        """
+    else:
+        sql = f"SELECT * FROM jobs {where} ORDER BY first_seen DESC LIMIT ? OFFSET ?"
+
+    params.extend([limit, offset])
     rows = db.execute(sql, params).fetchall()
+
     total = db.execute(
         "SELECT COUNT(*) FROM jobs WHERE is_active=1" + (" AND city LIKE ?" if city else ""),
         [f"%{city}%"] if city else [],
@@ -219,6 +238,61 @@ def match_resume_llm(req: MatchRequest):
     jobs = [dict(r) for r in rows]
     results = llm_match(req.resume_text, jobs, top_n=req.top_n)
     return {"total_scored": len(results), "top_matches": results}
+
+
+# ── Applications ───────────────────────────────────────
+
+@app.get("/api/me/applications")
+def list_applications(openid: str = "dev_user_001"):
+    db = get_db()
+    rows = db.execute(
+        "SELECT a.*, j.title, j.company, j.city, j.url, j.salary "
+        "FROM applications a JOIN jobs j ON a.job_id=j.id "
+        "WHERE a.openid=? ORDER BY a.updated_at DESC", (openid,)
+    ).fetchall()
+    db.close()
+    return {"applications": [dict(r) for r in rows]}
+
+
+@app.post("/api/me/applications")
+def create_application(req: dict):
+    db = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    history = json.dumps([{"stage": req.get("stage", "saved"), "ts": now}])
+    db.execute(
+        "INSERT INTO applications (openid, job_id, stage, history, notes, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (req.get("openid", "dev_user_001"), req["job_id"], req.get("stage", "saved"),
+         history, req.get("notes", ""), now, now),
+    )
+    db.commit()
+    app_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.close()
+    return {"id": app_id, "status": "created"}
+
+
+@app.patch("/api/me/applications/{app_id}")
+def update_application(app_id: int, req: dict):
+    db = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    existing = db.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+    if not existing:
+        db.close()
+        return {"error": "not found"}, 404
+
+    new_stage = req.get("stage", existing["stage"])
+    old_history = json.loads(existing["history"])
+    old_history.append({"stage": new_stage, "ts": now})
+    new_notes = req.get("notes", existing["notes"])
+
+    db.execute(
+        "UPDATE applications SET stage=?, history=?, notes=?, updated_at=? WHERE id=?",
+        (new_stage, json.dumps(old_history, ensure_ascii=False), new_notes, now, app_id),
+    )
+    db.commit()
+    db.close()
+    return {"id": app_id, "status": "updated"}
+
 
 @app.get("/api/stats")
 def stats():

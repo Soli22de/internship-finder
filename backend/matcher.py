@@ -69,20 +69,25 @@ def _call_deepseek(resume: str, job_title: str, jd: str) -> Dict:
 
 
 def match(resume: str, jobs: List[Dict], top_n: int = 20) -> List[Dict]:
-    """Keyword pre-filter then LLM re-rank."""
+    """Semantic pre-filter then LLM re-rank."""
     resume_lower = resume.lower()
     resume_words = set(resume_lower.split())
 
-    # Step 1: keyword pre-filter (free)
-    scored = []
-    for job in jobs:
-        jd = f"{job.get('title', '')} {job.get('jd_raw', '')}".lower()
-        kw_score = sum(1 for w in resume_words if w in jd and len(w) > 3)
-        if kw_score > 0:
-            scored.append((kw_score, job))
+    # Step 1: semantic top-60 (free, ~50ms)
+    from backend.semantic_match import semantic_topk
+    top_keys = set(semantic_topk(resume, k=60))
+    candidates = [j for j in jobs if f"{j['source']}::{j['external_id']}" in top_keys]
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    candidates = [job for _, job in scored[:60]]
+    # Fallback: if semantic returns nothing, use keyword match
+    if not candidates:
+        scored = []
+        for job in jobs:
+            jd = f"{job.get('title', '')} {job.get('jd_raw', '')}".lower()
+            kw_score = sum(1 for w in resume_words if w in jd and len(w) > 3)
+            if kw_score > 0:
+                scored.append((kw_score, job))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        candidates = [job for _, job in scored[:60]]
 
     # Step 2: LLM re-rank (paid)
     results = []

@@ -36,6 +36,11 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             first_seen TEXT DEFAULT '',
             last_seen TEXT DEFAULT '',
+            salary_min_kday REAL,
+            salary_max_kday REAL,
+            salary_unit TEXT DEFAULT 'unknown',
+            publish_time_iso TEXT,
+            dedup_key TEXT,
             UNIQUE(source, external_id)
         );
         CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
@@ -64,6 +69,19 @@ def init_db():
             last_used TEXT DEFAULT '',
             status TEXT DEFAULT 'inactive'
         );
+
+        CREATE TABLE IF NOT EXISTS applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            openid TEXT NOT NULL,
+            job_id INTEGER NOT NULL,
+            stage TEXT NOT NULL DEFAULT 'saved',
+            history TEXT NOT NULL DEFAULT '[]',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (job_id) REFERENCES jobs(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_apps_openid ON applications(openid);
     """)
     conn.commit()
     conn.close()
@@ -78,18 +96,22 @@ def upsert_job(job: dict) -> str:
     )
     row = cur.fetchone()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Compute dedup_key
+    from backend.migrations.dedup_backfill import make_dedup_key
+    dedup_key = make_dedup_key(job.get("company", ""), job.get("title", ""), job.get("city", ""))
 
     if row is None:
         conn.execute(
             """INSERT INTO jobs (external_id, source, company, title, city, jd_raw, salary,
                url, publish_time, deadline, recruit_type, raw_tags, crawled_at,
-               content_hash, first_seen, last_seen)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               content_hash, first_seen, last_seen, dedup_key)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (job["external_id"], job["source"], job["company"], job["title"],
              job.get("city", ""), job.get("jd_raw", ""), job.get("salary", ""),
              job.get("url", ""), job.get("publish_time", ""), job.get("deadline", ""),
              job.get("recruit_type", ""), job.get("raw_tags", ""), now,
-             job["content_hash"], now, now),
+             job["content_hash"], now, now, dedup_key),
         )
         conn.commit()
         conn.close()
@@ -99,12 +121,12 @@ def upsert_job(job: dict) -> str:
         conn.execute(
             """UPDATE jobs SET title=?, company=?, city=?, jd_raw=?, salary=?,
                url=?, publish_time=?, deadline=?, recruit_type=?, raw_tags=?,
-               content_hash=?, last_seen=?, is_active=1
+               content_hash=?, last_seen=?, is_active=1, dedup_key=?
                WHERE id=?""",
             (job["title"], job["company"], job.get("city", ""), job.get("jd_raw", ""),
              job.get("salary", ""), job.get("url", ""), job.get("publish_time", ""),
              job.get("deadline", ""), job.get("recruit_type", ""), job.get("raw_tags", ""),
-             job["content_hash"], now, row["id"]),
+             job["content_hash"], now, dedup_key, row["id"]),
         )
         conn.commit()
         conn.close()
