@@ -1,0 +1,41 @@
+<view class="page" wx:if="{{!loading && job}}">
+  <!-- Header -->
+  <view class="detail-header">
+    <text class="detail-title">{{job.title}}</text>
+    <text class="detail-company">{{job.company}}</text>
+    <view class="detail-tags">
+      <text class="tag">{{job.source}}</text>
+      <text class="tag" wx:if="{{job.city}}">{{job.city}}</text>
+      <text class="tag" wx:if="{{job.recruit_type}}">{{job.recruit_type}}</text>
+      <text class="tag salary-tag" wx:if="{{job.salary}}">{{job.salary}}</text>
+    </view>
+  </view>
+
+  <!-- Publish info -->
+  <view class="detail-section" wx:if="{{job.publish_time || job.deadline}}">
+    <view wx:if="{{job.publish_time}}">发布时间：{{job.publish_time}}</view>
+    <view wx:if="{{job.deadline}}">截止时间：{{job.deadline}}</view>
+  </view>
+
+  <!-- JD text -->
+  <view class="detail-section" wx:if="{{job.jd_raw}}">
+    <text class="section-title">职位描述</text>
+    <text class="jd-text" decode="true">{{job.jd_raw}}</text>
+  </view>
+
+  <!-- Category tags -->
+  <view class="detail-section" wx:if="{{job.raw_tags}}">
+    <text class="section-title">标签</text>
+    <text>{{job.raw_tags}}</text>
+  </view>
+
+  <!-- Actions -->
+  <view class="detail-actions">
+    <button class="btn-apply" bindtap="goApply">📋 复制链接去投递</button>
+    <button class="btn-track {{applied ? 'done' : ''}}" bindtap="markApplied">
+      {{applied ? '✅ 已标记投递' : '标记已投递'}}
+    </button>
+  </view>
+</view>
+
+<view class="loading" wx:if="{{loading}}">加载中...</view>

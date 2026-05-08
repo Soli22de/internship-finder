@@ -1,0 +1,43 @@
+<view class="page">
+  <!-- Stats card -->
+  <view class="stats-card">
+    <view class="stat-item">
+      <text class="stat-num">{{stats?.total_active || 0}}</text>
+      <text class="stat-label">岗位总数</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-num">{{health?.total_active_jobs || 0}}</text>
+      <text class="stat-label">活跃岗位</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-num">{{Object.keys(sources).length}}</text>
+      <text class="stat-label">数据源</text>
+    </view>
+  </view>
+
+  <!-- City selection -->
+  <view class="section">
+    <text class="section-title">目标城市</text>
+    <picker mode="selector" range="{{['上海','北京','广州','深圳','杭州','成都']}}" bindchange="onCityChange">
+      <text class="picker-value">{{city}}</text>
+    </picker>
+  </view>
+
+  <!-- Data sources -->
+  <view class="section">
+    <text class="section-title">数据源 ({{sources.length}})</text>
+    <view class="source-item" wx:for="{{sources}}" wx:key="name">
+      <text class="source-name">{{item.name}}</text>
+      <text class="source-count">{{item.count}}条</text>
+    </view>
+  </view>
+
+  <!-- Manual crawl -->
+  <button class="btn-crawl" bindtap="doCrawl">🔄 手动更新数据</button>
+
+  <!-- About -->
+  <view class="section">
+    <text class="about-text">实习聚合 v1.0 · 数据来自各大招聘平台</text>
+    <text class="about-text">遇到问题请在 GitHub 反馈</text>
+  </view>
+</view>

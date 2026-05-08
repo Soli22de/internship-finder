@@ -1,0 +1,36 @@
+<view class="page">
+  <view class="match-header">
+    <text class="match-title">简历匹配</text>
+    <text class="match-desc">粘贴简历内容，系统自动匹配最合适的岗位</text>
+  </view>
+
+  <textarea class="resume-input" placeholder="在此粘贴简历文本（支持复制黏贴简历文字）"
+            value="{{resumeText}}" bindinput="onResumeInput" maxlength="-1"/>
+  
+  <view class="match-actions">
+    <button class="btn-sample" bindtap="fillSample">填入示例简历</button>
+    <button class="btn-match" bindtap="doMatch" disabled="{{loading}}">
+      {{loading ? '匹配中...' : '开始匹配'}}
+    </button>
+  </view>
+
+  <!-- Results -->
+  <view class="match-results" wx:if="{{hasMatch}}">
+    <view class="result-header">
+      匹配结果 · 共 {{matches.length}} 个岗位
+    </view>
+    <view class="match-card" wx:for="{{matches}}" wx:key="id" 
+          bindtap="goDetail" data-id="{{item.id}}">
+      <view class="match-score">{{item.match_score}}分</view>
+      <view class="match-info">
+        <text class="match-title">{{item.title}}</text>
+        <text class="match-company">{{item.company}} · {{item.city}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- No results hint -->
+  <view class="empty" wx:if="{{hasMatch && !matches.length}}">
+    <text>暂未找到匹配岗位，试试上传完整简历</text>
+  </view>
+</view>

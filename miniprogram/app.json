@@ -1,0 +1,48 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/detail/detail",
+    "pages/match/match",
+    "pages/track/track",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#1a73e8",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "实习聚合",
+    "backgroundColor": "#f5f5f5",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#999",
+    "selectedColor": "#1a73e8",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "岗位",
+        "iconPath": "images/jobs.png",
+        "selectedIconPath": "images/jobs_active.png"
+      },
+      {
+        "pagePath": "pages/match/match",
+        "text": "匹配",
+        "iconPath": "images/match.png",
+        "selectedIconPath": "images/match_active.png"
+      },
+      {
+        "pagePath": "pages/track/track",
+        "text": "投递",
+        "iconPath": "images/track.png",
+        "selectedIconPath": "images/track_active.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "images/profile.png",
+        "selectedIconPath": "images/profile_active.png"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

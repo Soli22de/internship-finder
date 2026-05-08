@@ -1,0 +1,54 @@
+<view class="page">
+  <!-- Search -->
+  <view class="search-bar">
+    <input class="search-input" placeholder="搜岗位、公司、关键词" 
+           value="{{keyword}}" bindinput="onSearchInput" 
+           bindconfirm="onSearch" confirm-type="search"/>
+    <text class="search-btn" bindtap="onSearch">搜索</text>
+  </view>
+
+  <!-- Filter pills -->
+  <scroll-view class="filter-bar" scroll-x>
+    <text class="filter-pill {{!source ? 'active' : ''}}" 
+          bindtap="onSourceFilter" data-source="">全部</text>
+    <text class="filter-pill {{source === s.name ? 'active' : ''}}" 
+          wx:for="{{sources}}" wx:key="name"
+          bindtap="onSourceFilter" data-source="{{item.name}}">
+      {{item.name}} ({{item.count}})
+    </text>
+  </scroll-view>
+
+  <!-- Job list -->
+  <view class="job-count" wx:if="{{!loading && jobs.length}}">
+    共 {{jobs.length}} 个岗位
+  </view>
+
+  <view class="job-list">
+    <view class="job-card" wx:for="{{jobs}}" wx:key="id" 
+          bindtap="goDetail" data-id="{{item.id}}">
+      <view class="job-title">{{item.title}}</view>
+      <view class="job-meta">
+        <text class="company">{{item.company}}</text>
+        <text class="city">{{item.city}}</text>
+        <text class="source-tag">{{item.source}}</text>
+      </view>
+      <view class="job-footer">
+        <text class="salary">{{item.salary || '薪资面议'}}</text>
+        <text class="time">{{item.publish_time || ''}}</text>
+      </view>
+      <text class="jd-preview" wx:if="{{item.jd_raw}}">
+        {{item.jd_raw.slice(0, 80)}}...
+      </text>
+    </view>
+  </view>
+
+  <!-- Loading -->
+  <view class="loading" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <!-- Empty -->
+  <view class="empty" wx:if="{{!loading && !jobs.length}}">
+    <text>暂未找到匹配岗位</text>
+  </view>
+</view>

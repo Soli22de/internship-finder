@@ -1,0 +1,386 @@
+/* Global */
+page {
+  background: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #333;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+/* Card */
+.job-card {
+  background: #fff;
+  margin: 8px 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.job-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 6px;
+}
+.job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 6px;
+}
+.job-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.salary {
+  color: #e84830;
+  font-weight: 500;
+}
+.time {
+  color: #999;
+}
+.source-tag {
+  background: #e8f0fe;
+  color: #1a73e8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.jd-preview {
+  font-size: 12px;
+  color: #999;
+  margin-top: 6px;
+  display: block;
+  line-height: 1.4;
+}
+
+/* Search bar */
+.search-bar {
+  display: flex;
+  padding: 10px 12px;
+  background: #fff;
+  gap: 8px;
+}
+.search-input {
+  flex: 1;
+  height: 36px;
+  background: #f0f0f0;
+  border-radius: 18px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.search-btn {
+  color: #1a73e8;
+  line-height: 36px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Filter bar */
+.filter-bar {
+  white-space: nowrap;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+}
+.filter-pill {
+  display: inline-block;
+  padding: 4px 12px;
+  margin-right: 8px;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #666;
+  background: #f0f0f0;
+}
+.filter-pill.active {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.job-count {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  color: #999;
+}
+
+/* Detail */
+.detail-header {
+  background: #fff;
+  padding: 20px 16px;
+}
+.detail-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #222;
+  display: block;
+  margin-bottom: 8px;
+}
+.detail-company {
+  font-size: 15px;
+  color: #666;
+  display: block;
+  margin-bottom: 12px;
+}
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: #f0f0f0;
+}
+.salary-tag {
+  background: #fff0ed;
+  color: #e84830;
+}
+
+.detail-section {
+  background: #fff;
+  margin: 8px 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #444;
+  line-height: 1.6;
+}
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #222;
+  display: block;
+  margin-bottom: 8px;
+}
+.jd-text {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.detail-actions {
+  padding: 16px 12px 24px;
+}
+.btn-apply {
+  background: #1a73e8;
+  color: #fff;
+  border-radius: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.btn-track {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  width: 100%;
+}
+.btn-track.done {
+  border-color: #52c41a;
+  color: #52c41a;
+}
+
+/* Match */
+.match-header {
+  padding: 16px 12px;
+}
+.match-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.match-desc {
+  font-size: 13px;
+  color: #999;
+  margin-top: 4px;
+}
+.resume-input {
+  width: auto;
+  margin: 0 12px;
+  height: 200px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+}
+.match-actions {
+  padding: 12px;
+  display: flex;
+  gap: 8px;
+}
+.btn-sample {
+  flex: 1;
+  font-size: 13px;
+  background: #f0f0f0;
+  border-radius: 8px;
+}
+.btn-match {
+  flex: 2;
+  background: #1a73e8;
+  color: #fff;
+  border-radius: 8px;
+}
+.match-results {
+  padding: 0 12px;
+}
+.result-header {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 0;
+}
+.match-card {
+  display: flex;
+  gap: 10px;
+  background: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.match-score {
+  width: 48px;
+  height: 48px;
+  line-height: 48px;
+  text-align: center;
+  background: #1a73e8;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.match-info {
+  flex: 1;
+}
+.match-title {
+  font-size: 14px;
+  font-weight: 500;
+  display: block;
+}
+.match-company {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+  display: block;
+}
+
+/* Track */
+.track-header {
+  padding: 16px 12px;
+}
+.track-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.track-count {
+  font-size: 13px;
+  color: #999;
+  margin-top: 4px;
+}
+.track-list {
+  padding: 0 12px;
+}
+.track-item {
+  background: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  display: flex;
+  gap: 10px;
+}
+.track-num {
+  color: #999;
+}
+.btn-clear {
+  margin: 20px 12px;
+  background: #fff;
+  border: 1px solid #ff4d4f;
+  color: #ff4d4f;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* Profile */
+.stats-card {
+  display: flex;
+  justify-content: space-around;
+  background: #fff;
+  padding: 16px;
+  margin: 12px;
+  border-radius: 10px;
+}
+.stat-item {
+  text-align: center;
+}
+.stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a73e8;
+  display: block;
+}
+.stat-label {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.section {
+  background: #fff;
+  margin: 8px 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #222;
+  display: block;
+  margin-bottom: 8px;
+}
+.source-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.source-name {
+  color: #444;
+}
+.source-count {
+  color: #999;
+}
+
+.btn-crawl {
+  margin: 16px 12px;
+  background: #fff;
+  border: 1px solid #1a73e8;
+  color: #1a73e8;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.about-text {
+  display: block;
+  font-size: 12px;
+  color: #ccc;
+  text-align: center;
+  padding: 2px 0;
+}
+
+/* Shared */
+.loading, .empty {
+  text-align: center;
+  padding: 40px 0;
+  color: #999;
+  font-size: 14px;
+}
+.empty .sub {
+  display: block;
+  font-size: 12px;
+  color: #ccc;
+  margin-top: 4px;
+}
+
+.picker-value {
+  color: #1a73e8;
+  font-size: 14px;
+}

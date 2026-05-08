@@ -1,0 +1,20 @@
+<view class="page">
+  <view class="track-header">
+    <text class="track-title">投递追踪</text>
+    <text class="track-count">已投递 {{stats.total}} 个岗位</text>
+  </view>
+
+  <view class="track-list" wx:if="{{applied.length}}">
+    <view class="track-item" wx:for="{{applied}}" wx:key="index">
+      <text class="track-num">#{{item.index + 1}}</text>
+      <text class="track-id">ID: {{item.id}}</text>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{!applied.length}}">
+    <text>还没有投递记录</text>
+    <text class="sub">在详情页点击「标记已投递」即可记录</text>
+  </view>
+
+  <button class="btn-clear" wx:if="{{applied.length}}" bindtap="clearAll">清除所有记录</button>
+</view>
