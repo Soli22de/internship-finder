@@ -49,15 +49,13 @@ ResuMiner/ (submodule)                                   │   ├─ link healt
 | 9 | 百度 | official_baidu | Playwright Firefox | **Fixed** (was 0 rows, now Firefox+DOM) |
 | 10 | 实习僧 | shixiseng | Playwright headless | **Working** (fonts decoded, list 40 rows) |
 | 11 | BOSS直聘 | boss | Playwright Firefox | **Working** (cookies + double-nav) |
-| 12 | 猎聘 | liepin | Playwright API intercept | **New** (44 rows, no anti-bot) |
+| 12 | 猎聘 | liepin | Playwright API intercept | **New** (84 raw, no anti-bot) |
 
 ### Pending / Future:
-- [ ] 猎聘 real-time (ResuMiner skeleton, needs RPC server)
 - [ ] 51job / 应届生 (lower priority)
 - [ ] Font map auto-extraction for shixiseng (currently salary shows garbled)
-- [ ] Database migration (post-CSV cleanup)
-- [ ] Semantic resume matching (currently keyword-based)
-- [ ] FastAPI backend + WeChat mini-program
+- [x] Semantic resume matching (DeepSeek LLM)
+- [ ] FastAPI backend + WeChat mini-program → **Frontend: Opus, Backend: this agent**
 
 ---
 
