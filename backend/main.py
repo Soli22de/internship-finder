@@ -21,6 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from backend.db import get_db, init_db
 from backend.matcher import match as llm_match
+from backend.feed import FeedRequest, daily_feed
 
 scheduler = BackgroundScheduler()
 
@@ -131,13 +132,15 @@ def list_jobs(
     else:
         sql = f"SELECT * FROM jobs {where} ORDER BY first_seen DESC LIMIT ? OFFSET ?"
 
-    params.extend([limit, offset])
-    rows = db.execute(sql, params).fetchall()
+    params_ext = params + [limit, offset]
+    rows = db.execute(sql, params_ext).fetchall()
 
-    total = db.execute(
-        "SELECT COUNT(*) FROM jobs WHERE is_active=1" + (" AND city LIKE ?" if city else ""),
-        [f"%{city}%"] if city else [],
-    ).fetchone()[0]
+    # Total count (dedup-aware)
+    if dedup:
+        total_sql = f"SELECT COUNT(DISTINCT dedup_key) FROM jobs {where}"
+    else:
+        total_sql = f"SELECT COUNT(*) FROM jobs {where}"
+    total = db.execute(total_sql, params).fetchone()[0]
     db.close()
 
     return {
@@ -240,6 +243,13 @@ def match_resume_llm(req: MatchRequest):
     return {"total_scored": len(results), "top_matches": results}
 
 
+# ── Daily Feed ─────────────────────────────────────────
+
+@app.post("/api/feed/daily")
+def feed(req: FeedRequest):
+    return daily_feed(req)
+
+
 # ── Applications ───────────────────────────────────────
 
 @app.get("/api/me/applications")
@@ -278,7 +288,7 @@ def update_application(app_id: int, req: dict):
     existing = db.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
     if not existing:
         db.close()
-        return {"error": "not found"}, 404
+        raise HTTPException(404, "application not found")
 
     new_stage = req.get("stage", existing["stage"])
     old_history = json.loads(existing["history"])

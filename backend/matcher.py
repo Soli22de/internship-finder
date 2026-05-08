@@ -69,37 +69,45 @@ def _call_deepseek(resume: str, job_title: str, jd: str) -> Dict:
 
 
 def match(resume: str, jobs: List[Dict], top_n: int = 20) -> List[Dict]:
-    """Semantic pre-filter then LLM re-rank."""
-    resume_lower = resume.lower()
-    resume_words = set(resume_lower.split())
+    """Semantic pre-filter then LLM re-rank. Falls back to cosine score if no API key."""
+    from backend.semantic_match import semantic_topk_with_scores
+    ranked = semantic_topk_with_scores(resume, k=max(top_n * 3, 60))
+    score_map = dict(ranked)
 
-    # Step 1: semantic top-60 (free, ~50ms)
-    from backend.semantic_match import semantic_topk
-    top_keys = set(semantic_topk(resume, k=60))
-    candidates = [j for j in jobs if f"{j['source']}::{j['external_id']}" in top_keys]
+    candidates = []
+    for j in jobs:
+        key = f"{j['source']}::{j['external_id']}"
+        if key in score_map:
+            cos = score_map[key]
+            candidates.append({**j, "_cos": cos})
 
-    # Fallback: if semantic returns nothing, use keyword match
-    if not candidates:
-        scored = []
-        for job in jobs:
-            jd = f"{job.get('title', '')} {job.get('jd_raw', '')}".lower()
-            kw_score = sum(1 for w in resume_words if w in jd and len(w) > 3)
-            if kw_score > 0:
-                scored.append((kw_score, job))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        candidates = [job for _, job in scored[:60]]
+    candidates.sort(key=lambda x: x["_cos"], reverse=True)
+    candidates = candidates[:top_n]
 
-    # Step 2: LLM re-rank (paid)
+    if not DEEPSEEK_KEY:
+        results = []
+        for j in candidates:
+            cos = j.pop("_cos")
+            score = max(40, min(98, int(40 + (cos + 1) / 2 * 58)))
+            results.append({
+                **j,
+                "match_score": score,
+                "match_reason": "",
+                "hit_skills": [],
+                "gap_skills": [],
+            })
+        return results
+
     results = []
-    for job in candidates:
-        llm = _call_deepseek(resume, job.get("title", ""), job.get("jd_raw", ""))
+    for j in candidates:
+        j.pop("_cos", None)
+        llm = _call_deepseek(resume, j.get("title", ""), j.get("jd_raw", ""))
         results.append({
-            **job,
+            **j,
             "match_score": llm["score"],
             "match_reason": llm["reason"],
             "hit_skills": llm["hit_skills"],
             "gap_skills": llm["gap_skills"],
         })
-
     results.sort(key=lambda x: x["match_score"], reverse=True)
     return results[:top_n]

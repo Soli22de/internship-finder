@@ -1,5 +1,6 @@
 """B5: Semantic search with pre-built embeddings."""
 import os, numpy as np
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from sentence_transformers import SentenceTransformer
 
 _EMBEDDINGS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "embeddings.npz")
@@ -25,3 +26,12 @@ def semantic_topk(resume_text: str, k: int = 60) -> list:
     sims = embs @ rvec
     top_idx = np.argsort(-sims)[:k]
     return [ids[i] for i in top_idx]
+
+
+def semantic_topk_with_scores(resume_text: str, k: int = 60):
+    """Return [(source::external_id, cos_score), ...] sorted by score desc."""
+    model, embs, ids = _load()
+    rvec = model.encode([resume_text], normalize_embeddings=True)[0]
+    sims = embs @ rvec
+    top_idx = np.argsort(-sims)[:k]
+    return [(ids[i], float(sims[i])) for i in top_idx]

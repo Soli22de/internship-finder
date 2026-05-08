@@ -1,5 +1,6 @@
 """B5: Build embeddings for all jobs with JD text."""
 import os, sys, numpy as np
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sentence_transformers import SentenceTransformer
 from backend.db import get_db
