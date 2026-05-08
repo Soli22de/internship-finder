@@ -16,6 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 
 from backend.db import get_db, init_db
+from backend.matcher import match as llm_match
 
 scheduler = BackgroundScheduler()
 
@@ -204,7 +205,20 @@ def match_resume(req: MatchRequest):
     return {"total_matched": len(scored), "top_matches": scored[:req.top_n]}
 
 
-# ── Stats ───────────────────────────────────────────────
+# ── Resume Match (LLM-powered) ──────────────────────────
+
+@app.post("/api/match/llm")
+def match_resume_llm(req: MatchRequest):
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM jobs WHERE is_active=1 AND city LIKE ? ORDER BY first_seen DESC LIMIT 500",
+        (f"%{req.city}%",),
+    ).fetchall()
+    db.close()
+
+    jobs = [dict(r) for r in rows]
+    results = llm_match(req.resume_text, jobs, top_n=req.top_n)
+    return {"total_scored": len(results), "top_matches": results}
 
 @app.get("/api/stats")
 def stats():
