@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
 import pandas as pd
+from bs4 import BeautifulSoup
 
 if __package__ in {None, ""}:
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -62,16 +63,33 @@ def _fetch_one_page(page, page_num: int, city: str, keyword: str, font_map: Dict
     url = f"{SEARCH_URL}?{urlencode(params)}"
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=20000)
-    except Exception:
+    except Exception as e:
+        print(f"  [sxs] goto failed: {e}")
         return []
     page.wait_for_timeout(4000)
 
     # Fast scroll
     for _ in range(4):
-        page.mouse.wheel(0, 2000)
-        page.wait_for_timeout(300)
+        try:
+            page.mouse.wheel(0, 2000)
+            page.wait_for_timeout(300)
+        except:
+            break
 
-    # Use JS to extract card data in one shot — much faster than per-element locator
+    # Check if cards exist
+    try:
+        card_count = page.evaluate("document.querySelectorAll('.intern-wrap').length")
+    except:
+        card_count = 0
+    if card_count == 0:
+        try:
+            url_now = page.url[:80]
+        except:
+            url_now = "N/A"
+        print(f"  [sxs] pg{page_num}: 0 cards, url={url_now}")
+        return []
+
+    # Use JS to extract card data in one shot
     rows: List[Dict[str, str]] = []
     cards_data = page.evaluate("""() => {
         const cards = document.querySelectorAll('.intern-wrap');
@@ -121,19 +139,46 @@ def _fetch_one_page(page, page_num: int, city: str, keyword: str, font_map: Dict
 
 
 def _fetch_detail(page, job: Dict[str, str], font_map: Dict[str, str]) -> Dict[str, str]:
-    """Visit a detail page and extract full JD text."""
+    """Visit a detail page and extract full JD text from raw HTML."""
     url = job.get("url", "")
     if not url:
         return {}
+
+    # Try using page's JS context to fetch (bypasses some anti-bot)
+    content = ""
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        js = f"""
+        (async () => {{
+            try {{
+                const r = await fetch('{url}', {{credentials: 'include'}});
+                return await r.text();
+            }} catch(e) {{
+                return 'FETCH_ERROR: ' + e.message;
+            }}
+        }})()
+        """
+        fetched = page.evaluate(js)
+        if not fetched.startswith("FETCH_ERROR") and len(fetched) > 100:
+            content = fetched
     except Exception:
-        return {}
-    page.wait_for_timeout(3000)
+        pass
+
+    # If JS fetch failed or returned captcha, try page.goto
+    if not content or "code\":100" in content[:200]:
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+        content = page.content()
 
     result: Dict[str, str] = {}
     try:
-        content = page.inner_text("body")
+        # Use JS-fetched content if available, else page.content()
+        html_text = content or page.content()
+
+        soup = BeautifulSoup(html_text, "html.parser")
+        content = soup.get_text("\n")
         content = apply_font_map(content, font_map)
 
         # Extract JD sections
@@ -226,7 +271,7 @@ def _fetch_shixiseng(
         keywords = [""]
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=["--proxy-server=direct://"])
         ctx = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             viewport={"width": 1920, "height": 1080},
@@ -237,10 +282,6 @@ def _fetch_shixiseng(
 
         # Intercept font file to build font_map live
         live_font_map = {}
-        font_urls = []
-        def on_font_request(req):
-            if "iconfonts/file" in req.url:
-                font_urls.append(req.url)
         def on_font_response(resp):
             if "iconfonts/file" in resp.url:
                 try:
@@ -250,16 +291,9 @@ def _fetch_shixiseng(
                         live_font_map.update(fm)
                 except Exception:
                     pass
-        page.on("request", on_font_request)
         page.on("response", on_font_response)
 
-        # Load first page to trigger font download
-        first_url = f"{SEARCH_URL}?{urlencode({'page': 1, 'city': city})}"
-        try:
-            page.goto(first_url, wait_until="domcontentloaded", timeout=20000)
-            page.wait_for_timeout(3000)
-        except Exception:
-            pass
+        # Merge cached font_map with live-extracted one
 
         # Merge cached font_map with live-extracted one
         if live_font_map:
